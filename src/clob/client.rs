@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
-#[cfg(feature = "heartbeats")]
 use std::time::Duration;
 
 use alloy::dyn_abi::Eip712Domain;
@@ -1472,9 +1471,14 @@ impl Client<Unauthenticated> {
         headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
         let client = ReqwestClient::builder()
+            .http2_prior_knowledge()
+            .http2_keep_alive_interval(Some(Duration::from_secs(10)))
+            .http2_keep_alive_timeout(Duration::from_secs(20))
+            .http2_keep_alive_while_idle(true)
             .default_headers(headers)
             .tcp_nodelay(true)
             .pool_idle_timeout(None)
+            .pool_max_idle_per_host(10)
             .http2_initial_stream_window_size(524_288)
             .http2_initial_connection_window_size(524_288)
             .build()?;
