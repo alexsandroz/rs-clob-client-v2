@@ -1467,20 +1467,21 @@ impl Client<Unauthenticated> {
 
         headers.insert("User-Agent", HeaderValue::from_static("rs_clob_client"));
         headers.insert("Accept", HeaderValue::from_static("*/*"));
-        headers.insert("Connection", HeaderValue::from_static("keep-alive"));
         headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
         let client = ReqwestClient::builder()
+            .cookie_store(false)
             .http2_prior_knowledge()
             .http2_keep_alive_interval(Some(Duration::from_secs(10)))
             .http2_keep_alive_timeout(Duration::from_secs(20))
             .http2_keep_alive_while_idle(true)
             .default_headers(headers)
             .tcp_nodelay(true)
+            .tcp_keepalive(Some(Duration::from_secs(90)))
             .pool_idle_timeout(None)
-            .pool_max_idle_per_host(10)
-            .http2_initial_stream_window_size(524_288)
-            .http2_initial_connection_window_size(524_288)
+            .pool_max_idle_per_host(20)
+            .http2_initial_stream_window_size(1_048_576)
+            .http2_initial_connection_window_size(1_048_576)
             .build()?;
 
         let geoblock_host = Url::parse(
