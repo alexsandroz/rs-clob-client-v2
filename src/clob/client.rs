@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::mem;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -407,6 +408,17 @@ impl Default for Client<Unauthenticated> {
 }
 
 /// Configuration for [`Client`]
+#[cfg(feature = "heartbeats")]
+#[derive(Clone)]
+pub struct HeartbeatHook(pub Arc<dyn Fn() + Send + Sync>);
+
+#[cfg(feature = "heartbeats")]
+impl std::fmt::Debug for HeartbeatHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HeartbeatHook")
+    }
+}
+
 #[derive(Clone, Debug, Builder)]
 pub struct Config {
     /// Whether the [`Client`] will use the server time provided by Polymarket when creating auth
@@ -420,10 +432,15 @@ pub struct Config {
     /// Default builder code inherited by orders built via [`Client::limit_order`] or
     /// [`Client::market_order`] when not set on the order itself.
     builder_code: Option<B256>,
+    #[builder(default)]
+    pub resolve_addrs: Vec<(String, SocketAddr)>,
     #[cfg(feature = "heartbeats")]
     #[builder(default = Duration::from_secs(5))]
     /// How often the [`Client`] will automatically submit heartbeats. The default is five (5) seconds.
     heartbeat_interval: Duration,
+    #[cfg(feature = "heartbeats")]
+    /// Optional hook that is executed every time a heartbeat is triggered.
+    pub heartbeat_hook: Option<HeartbeatHook>,
 }
 
 impl Default for Config {
@@ -432,14 +449,67 @@ impl Default for Config {
             use_server_time: false,
             geoblock_host: None,
             builder_code: None,
+            resolve_addrs: Vec::new(),
             #[cfg(feature = "heartbeats")]
             heartbeat_interval: Duration::from_secs(5),
+            #[cfg(feature = "heartbeats")]
+            heartbeat_hook: None,
         }
     }
 }
 
 /// The default geoblock API host (separate from CLOB host)
 const DEFAULT_GEOBLOCK_HOST: &str = "https://polymarket.com";
+
+/// Resolves the host in `url` to a list of pre-resolved address entries
+/// for use with [`Config::resolve_addrs`].
+///
+/// Performs a one-time synchronous DNS lookup and returns the first IPv4
+/// address found. IPv4 is preferred to avoid the Happy Eyeballs AAAA
+/// round-trips on future reconnections.
+///
+/// Intended to be called **once at application startup**. The returned
+/// `Vec` can be passed directly to `Config::builder().resolve_addrs(...)`
+/// to pin the connection pool and eliminate A/AAAA DNS lookups (~164ms)
+/// on every reconnection event.
+///
+/// Returns an empty `Vec` if the URL cannot be parsed, the host is
+/// missing, or DNS resolution fails.
+///
+/// # Example
+///
+/// ```no_run
+/// use polymarket_client_sdk_v2::clob::{Client, Config, resolve_addrs_for_url};
+///
+/// let resolve_addrs = resolve_addrs_for_url("https://clob.polymarket.com");
+/// let config = Config::builder()
+///     .resolve_addrs(resolve_addrs)
+///     .build();
+/// let client = Client::new("https://clob.polymarket.com", config).unwrap();
+/// ```
+fn resolve_addrs_for_url(url: &str) -> Vec<(String, SocketAddr)> {
+    use std::net::ToSocketAddrs as _;
+
+    let Ok(parsed) = Url::parse(url) else {
+        return vec![];
+    };
+    let host = parsed.host_str().unwrap_or("").to_string();
+    if host.is_empty() {
+        return vec![];
+    }
+    let port = parsed.port_or_known_default().unwrap_or(443);
+
+    match (host.as_str(), port).to_socket_addrs() {
+        Ok(mut addrs) => {
+            // Prefer IPv4 to avoid Happy Eyeballs AAAA round-trips on reconnections
+            addrs
+                .find(|a| a.is_ipv4())
+                .map(|addr| vec![(host, addr)])
+                .unwrap_or_default()
+        }
+        Err(_) => vec![],
+    }
+}
 
 #[derive(Debug)]
 struct ClientInner<S: State> {
@@ -1469,7 +1539,7 @@ impl Client<Unauthenticated> {
         headers.insert("Accept", HeaderValue::from_static("*/*"));
         headers.insert("Content-Type", HeaderValue::from_static("application/json"));
 
-        let client = ReqwestClient::builder()
+        let mut client_builder = ReqwestClient::builder()
             .cookie_store(false)
             .http2_prior_knowledge()
             .http2_keep_alive_interval(Some(Duration::from_secs(10)))
@@ -1481,8 +1551,21 @@ impl Client<Unauthenticated> {
             .pool_idle_timeout(None)
             .pool_max_idle_per_host(20)
             .http2_initial_stream_window_size(1_048_576)
-            .http2_initial_connection_window_size(1_048_576)
-            .build()?;
+            .http2_initial_connection_window_size(1_048_576);
+        // Auto-resolve DNS for the CLOB host if the caller did not provide explicit
+        // entries via Config::resolve_addrs. Runs once at startup (synchronous, ~1 RTT)
+        // and pins the resolved IPv4 in the reqwest pool, eliminating A/AAAA lookups
+        // (~164ms) on every subsequent reconnection event.
+        let dns_entries = if config.resolve_addrs.is_empty() {
+            resolve_addrs_for_url(host)
+        } else {
+            config.resolve_addrs.clone()
+        };
+        for (h, addr) in &dns_entries {
+            client_builder = client_builder.resolve(h, *addr);
+        }
+
+        let client = client_builder.build()?;
 
         let geoblock_host = Url::parse(
             config
@@ -2641,6 +2724,9 @@ impl<K: Kind> Client<Authenticated<K>> {
                         break
                     },
                     _ = ticker.tick() => {
+                        if let Some(hook) = &client_clone.inner.config.heartbeat_hook {
+                            (hook.0)();
+                        }
                         match client_clone.post_heartbeat(heartbeat_id).await {
                             Ok(response) => {
                                 #[cfg(feature = "tracing")]
