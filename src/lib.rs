@@ -270,6 +270,8 @@ async fn request<Response: DeserializeOwned>(
         request.headers_mut().extend(h);
     }
 
+    *request.version_mut() = reqwest::Version::HTTP_3;
+
     let response = client.execute(request).await?;
     let status_code = response.status();
 
