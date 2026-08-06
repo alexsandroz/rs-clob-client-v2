@@ -403,8 +403,11 @@ pub struct TradeResponse {
     pub market: B256,
     pub asset_id: U256,
     pub side: Side,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub size: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub fee_rate_bps: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub price: Decimal,
     pub status: TradeStatusType,
     #[serde_as(as = "TimestampSeconds<String>")]
@@ -535,8 +538,11 @@ pub struct MakerOrder {
     pub order_id: String,
     pub owner: ApiKey,
     pub maker_address: Address,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub matched_amount: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub price: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub fee_rate_bps: Decimal,
     pub asset_id: U256,
     pub outcome: String,
@@ -688,13 +694,18 @@ pub struct BuilderTradeResponse {
     /// Hash of the taker order.
     pub taker_order_hash: B256,
     /// Address of the builder.
-    pub builder: Address,
+    #[serde_as(as = "DefaultOnError<NoneAsEmptyString>")]
+    #[serde(default)]
+    pub builder: Option<Address>,
     /// The market condition ID.
     pub market: B256,
     pub asset_id: U256,
     pub side: Side,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub size: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub size_usdc: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub price: Decimal,
     pub status: TradeStatusType,
     pub outcome: String,
@@ -707,8 +718,13 @@ pub struct BuilderTradeResponse {
     #[serde_as(as = "TimestampSeconds<String>")]
     pub match_time: DateTime<Utc>,
     pub bucket_index: u32,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub fee: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
     pub fee_usdc: Decimal,
+    #[serde(deserialize_with = "empty_string_as_zero")]
+    pub builder_fee: Decimal,
+    pub builder_code: String,
     #[serde(alias = "err_msg")]
     pub err_msg: Option<String>,
     pub created_at: Option<DateTime<Utc>>,

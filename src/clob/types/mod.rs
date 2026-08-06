@@ -310,15 +310,15 @@ pub enum OrderStatusType {
 #[serde(rename_all = "UPPERCASE")]
 #[strum(serialize_all = "UPPERCASE")]
 pub enum TradeStatusType {
-    #[serde(alias = "matched")]
+    #[serde(alias = "matched", alias = "TRADE_STATUS_MATCHED")]
     Matched,
-    #[serde(alias = "mined")]
+    #[serde(alias = "mined", alias = "TRADE_STATUS_MINED")]
     Mined,
-    #[serde(alias = "confirmed")]
+    #[serde(alias = "confirmed", alias = "TRADE_STATUS_CONFIRMED")]
     Confirmed,
-    #[serde(alias = "retrying")]
+    #[serde(alias = "retrying", alias = "TRADE_STATUS_RETRYING")]
     Retrying,
-    #[serde(alias = "failed")]
+    #[serde(alias = "failed", alias = "TRADE_STATUS_FAILED")]
     Failed,
     /// Unknown trade status type from the API (captures the raw value for debugging).
     #[serde(untagged)]
