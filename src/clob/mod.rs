@@ -159,4 +159,4 @@ pub mod utilities;
 #[cfg(feature = "ws")]
 pub mod ws;
 
-pub use client::{Client, Config, HeartbeatHook};
+pub use client::{Client, Config};
